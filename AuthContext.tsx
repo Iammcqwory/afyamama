@@ -43,12 +43,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const login = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+
     const provider = new GoogleAuthProvider();
+    // Prompt the user to select an account even if they are already signed in
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login Error:", error);
+      
+      // Handle known iframe/popup issues
+      if (error.code === 'auth/network-request-failed') {
+        alert("Action Required: Due to browser security in iframes, please open this app in a NEW TAB (top right icon) to Sign In successfully.");
+      } else if (error.code === 'auth/popup-blocked') {
+        alert("The sign-in popup was blocked. Please allow popups or open the app in a new tab.");
+      } else if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+        // Silently handle user-initiated cancellations
+      } else {
+        alert(`Authentication issue: ${error.message}`);
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
