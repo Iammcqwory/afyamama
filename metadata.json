@@ -1,0 +1,8 @@
+{
+  "name": "Mamabora",
+  "description": "An AI agent that assists parents by assessing a child's symptoms, providing home care advice, and identifying red flags that require medical attention.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
