@@ -11,6 +11,8 @@ import { MotherHub } from './components/MotherHub';
 import { BabyHub } from './components/BabyHub';
 import { ToolsHub } from './components/ToolsHub';
 import { ShopPage } from './components/ShopPage';
+import { useAuth } from './AuthContext';
+import { createChatSession, saveMessage, subscribeToMessages } from './services/firebaseService';
 
 export type AppTab = 'home' | 'chat' | 'podcast' | 'shop' | 'pregnancy' | 'maternal-health' | 'expert-advice' | 'baby-tracker' | 'development' | 'feeding-sleep' | 'baby-names' | 'safety' | 'nutrition' | 'white-noise';
 
@@ -18,34 +20,64 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const chatSession = useRef<Chat | null>(null);
+  const { user } = useAuth();
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (activeTab === 'chat' && !chatSession.current) {
       chatSession.current = startChat();
-      handleSend('', undefined, true); 
-    }
-  }, [activeTab]);
-
-  const clearChat = () => {
-    setMessages([]);
-    chatSession.current = startChat();
-    handleSend('', undefined, true);
-  };
-
-  const handleReact = (messageId: string, reaction: string) => {
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === messageId) {
-        const reactions = { ...(msg.reactions || {}) };
-        reactions[reaction] = (reactions[reaction] || 0) + 1;
-        return { ...msg, reactions };
+      if (!user) {
+        handleSend('', undefined, true); 
       }
-      return msg;
-    }));
+    }
+  }, [activeTab, user]);
+
+  useEffect(() => {
+    if (user && activeTab === 'chat' && !sessionId) {
+      const initSession = async () => {
+        const id = await createChatSession(user.uid, "New Conversation");
+        if (id) {
+            setSessionId(id);
+            // No need to call handleSend here if sessionId will trigger welcome or if we want to wait
+            // Actually, let's call it ONLY once with the ID
+            handleSend('', undefined, true, id);
+        }
+      };
+      initSession();
+    }
+  }, [user, activeTab]); // Removed sessionId dependency to prevent loop
+
+  useEffect(() => {
+    if (sessionId) {
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = subscribeToMessages(sessionId, (msgs) => {
+        setMessages(msgs);
+      });
+    }
+    return () => unsubscribeRef.current?.();
+  }, [sessionId]);
+
+  const clearChat = async () => {
+    if (user) {
+      const id = await createChatSession(user.uid, "New Conversation");
+      if (id) {
+        setSessionId(id);
+        chatSession.current = startChat();
+        handleSend('', undefined, true, id);
+      }
+    } else {
+      setMessages([]);
+      chatSession.current = startChat();
+      handleSend('', undefined, true);
+    }
   };
 
-  const handleSend = async (text: string, imageData?: string, isInitial = false) => {
+  const handleSend = async (text: string, imageData?: string, isInitial = false, targetSessionId?: string) => {
     if (!chatSession.current) return;
+
+    const currentSessionId = targetSessionId || sessionId;
 
     if (!isInitial) {
       const userMessage: Message = { 
@@ -54,7 +86,12 @@ const App: React.FC = () => {
         sender: Sender.User,
         timestamp: Date.now()
       };
-      setMessages(prev => [...prev, userMessage]);
+      
+      if (!currentSessionId) {
+        setMessages(prev => [...prev, userMessage]);
+      } else {
+        await saveMessage(currentSessionId, userMessage.text, Sender.User, imageData);
+      }
     }
     
     setIsTyping(true);
@@ -62,13 +99,13 @@ const App: React.FC = () => {
     const aiMessageId = aiMessageTimestamp.toString();
     
     try {
-      let messagePayload: any = text;
+      let messagePayload: any = text || (isInitial ? "Hello" : "");
 
       if (imageData) {
         const [mimeType, base64Data] = imageData.split(';base64,');
         messagePayload = {
           parts: [
-            { text: text || "Analyze this image for any potential pediatric symptoms or concerns." },
+            { text: text || "Analyze this image for any potential maternal or pediatric symptoms or health concerns." },
             { inlineData: { data: base64Data, mimeType: mimeType.split(':')[1] } }
           ]
         };
@@ -80,38 +117,67 @@ const App: React.FC = () => {
       for await (const chunk of stream) {
         fullResponse += chunk.text;
         
-        setMessages(prev => {
-          const otherMessages = prev.filter(m => !m.id.startsWith(aiMessageId));
-          const newMessages: Message[] = [...otherMessages];
-          const parts = fullResponse.split(/(\[RED_FLAG\].*?(?=\[RED_FLAG\]|$))/gs).filter(Boolean);
+        if (!currentSessionId) {
+          setMessages(prev => {
+            const otherMessages = prev.filter(m => !m.id.startsWith(aiMessageId));
+            const newMessages: Message[] = [...otherMessages];
+            const parts = fullResponse.split(/(\[RED_FLAG\].*?(?=\[RED_FLAG\]|$))/gs).filter(Boolean);
 
-          parts.forEach((part, index) => {
-             const trimmedPart = part.trim();
-             if(trimmedPart.startsWith('[RED_FLAG]')) {
-                 newMessages.push({
-                     id: `${aiMessageId}-warning-${index}`,
-                     text: trimmedPart.replace('[RED_FLAG]', '').trim(),
-                     sender: Sender.Warning,
-                     timestamp: aiMessageTimestamp + index
-                 });
-             } else if (trimmedPart) {
-                 newMessages.push({
-                     id: `${aiMessageId}-ai-${index}`,
-                     text: trimmedPart,
-                     sender: Sender.AI,
-                     timestamp: aiMessageTimestamp + index
-                 });
-             }
+            parts.forEach((part, index) => {
+               const trimmedPart = part.trim();
+               if(trimmedPart.startsWith('[RED_FLAG]')) {
+                   newMessages.push({
+                       id: `${aiMessageId}-warning-${index}`,
+                       text: trimmedPart.replace('[RED_FLAG]', '').trim(),
+                       sender: Sender.Warning,
+                       timestamp: aiMessageTimestamp + index
+                   });
+               } else if (trimmedPart) {
+                   newMessages.push({
+                       id: `${aiMessageId}-ai-${index}`,
+                       text: trimmedPart,
+                       sender: Sender.AI,
+                       timestamp: aiMessageTimestamp + index
+                   });
+               }
+            });
+            return newMessages;
           });
-          return newMessages;
-        });
+        }
+      }
+
+      if (currentSessionId && fullResponse) {
+          const parts = fullResponse.split(/(\[RED_FLAG\].*?(?=\[RED_FLAG\]|$))/gs).filter(Boolean);
+          for (const part of parts) {
+              const trimmedPart = part.trim();
+              if (trimmedPart.startsWith('[RED_FLAG]')) {
+                  await saveMessage(currentSessionId, trimmedPart.replace('[RED_FLAG]', '').trim(), Sender.Warning);
+              } else if (trimmedPart) {
+                  await saveMessage(currentSessionId, trimmedPart, Sender.AI);
+              }
+          }
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      setMessages(prev => [...prev, { id: aiMessageId, text: 'Sorry, I encountered an error communicating with the assistant.', sender: Sender.Warning, timestamp: Date.now() }]);
+      if (!currentSessionId) {
+        setMessages(prev => [...prev, { id: aiMessageId, text: 'Sorry, I encountered an error communicating with the assistant.', sender: Sender.Warning, timestamp: Date.now() }]);
+      } else {
+        await saveMessage(currentSessionId, 'Sorry, I encountered an error communicating with the assistant.', Sender.Warning);
+      }
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleReact = (messageId: string, reaction: string) => {
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === messageId) {
+        const reactions = { ...(msg.reactions || {}) };
+        reactions[reaction] = (reactions[reaction] || 0) + 1;
+        return { ...msg, reactions };
+      }
+      return msg;
+    }));
   };
 
   const renderContent = () => {

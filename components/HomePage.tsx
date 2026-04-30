@@ -36,7 +36,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onStart }) => {
             <button 
                 onClick={onStart}
                 className="w-full bg-brand-DEFAULT text-white font-bold text-lg py-4 rounded-xl shadow-lg hover:bg-brand-dark hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 group"
-                aria-label="Start consultation with Mamabora AI assistant"
+                aria-label="Start consultation with MamaB AI assistant"
             >
                 <BotIcon className="w-6 h-6 text-brand-light group-hover:animate-bounce" />
                 <span>Start Consultation</span>
