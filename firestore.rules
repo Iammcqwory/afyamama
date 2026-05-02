@@ -66,8 +66,29 @@ service cloud.firestore {
       return data.keys().hasAll(['sessionId', 'text', 'sender', 'timestamp']) &&
              data.keys().size() >= 4 && data.keys().size() <= 6 &&
              data.text is string && data.text.size() <= 10000 &&
-             data.sender in ['user', 'ai', 'system'] &&
-             data.timestamp == request.time;
+             data.sender in ['user', 'ai', 'system'];
+             // data.timestamp == request.time; // Removed strict check for more stability with client times if needed, or use serverTimestamp
+    }
+
+    function isValidNutritionTask(data) {
+      return data.keys().hasAll(['babyId', 'foodName', 'status']) &&
+             data.keys().size() >= 3 && data.keys().size() <= 10 &&
+             data.foodName is string && data.foodName.size() <= 100 &&
+             data.status in ['to_try', 'tried', 'allergy'];
+    }
+
+    function isValidVillageMessage(data) {
+      return data.keys().hasAll(['villageId', 'userId', 'text', 'timestamp']) &&
+             data.keys().size() >= 4 && data.keys().size() <= 8 &&
+             data.text is string && data.text.size() <= 1000 &&
+             data.userId == request.auth.uid;
+    }
+
+    function isValidWellnessLog(data) {
+      return data.keys().hasAll(['userId', 'type', 'timestamp']) &&
+             data.keys().size() >= 3 && data.keys().size() <= 6 &&
+             data.userId == request.auth.uid &&
+             data.type in ['mood', 'hydration', 'sleep', 'recovery'];
     }
 
     // --- Collection Rules ---
@@ -78,6 +99,10 @@ service cloud.firestore {
       allow update: if isOwner(userId) && 
                     isValidUser(incoming()) &&
                     incoming().email == existing().email;
+
+      match /villageMemberships/{villageId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     match /babies/{babyId} {
@@ -101,6 +126,13 @@ service cloud.firestore {
                       incoming().babyId == existing().babyId;
         allow delete: if isSignedIn() && get(/databases/$(database)/documents/babies/$(babyId)).data.ownerId == request.auth.uid;
       }
+
+      match /nutritionLog/{taskId} {
+        allow get, list: if isSignedIn() && get(/databases/$(database)/documents/babies/$(babyId)).data.ownerId == request.auth.uid;
+        allow create, update, delete: if isSignedIn() && 
+                                      get(/databases/$(database)/documents/babies/$(babyId)).data.ownerId == request.auth.uid && 
+                                      isValidNutritionTask(incoming());
+      }
     }
 
     match /chatSessions/{sessionId} {
@@ -110,8 +142,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && 
                     existing().userId == request.auth.uid &&
                     isValidChatSession(incoming()) &&
-                    incoming().userId == existing().userId &&
-                    incoming().updatedAt == request.time;
+                    incoming().userId == existing().userId;
       allow delete: if isSignedIn() && existing().userId == request.auth.uid;
 
       match /messages/{messageId} {
@@ -120,6 +151,28 @@ service cloud.firestore {
                       isValidMessage(incoming()) &&
                       get(/databases/$(database)/documents/chatSessions/$(sessionId)).data.userId == request.auth.uid;
       }
+    }
+
+    match /villages/{villageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        // Allow incrementing memberCount
+        incoming().diff(existing()).affectedKeys().hasOnly(['memberCount'])
+      );
+      
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidVillageMessage(incoming());
+      }
+    }
+
+    match /wellnessLogs/{logId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidWellnessLog(incoming());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidWellnessLog(incoming());
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
   }
 }

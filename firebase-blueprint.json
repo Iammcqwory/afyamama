@@ -168,6 +168,58 @@
         "sender",
         "timestamp"
       ]
+    },
+    "nutritionTask": {
+      "title": "Nutrition Task",
+      "description": "A food item or nutrition related task for a baby.",
+      "type": "object",
+      "properties": {
+        "babyId": { "type": "string" },
+        "foodName": { "type": "string" },
+        "status": { "type": "string", "enum": ["to_try", "tried", "allergy"] },
+        "reaction": { "type": "string" },
+        "triedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["babyId", "foodName", "status"]
+    },
+    "village": {
+      "title": "Community Village",
+      "description": "A group for mothers based on due date or region.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["dueDate", "region", "topic"] },
+        "memberCount": { "type": "number" }
+      },
+      "required": ["name", "type"]
+    },
+    "villageMessage": {
+      "title": "Village Message",
+      "description": "A message sent in a village community.",
+      "type": "object",
+      "properties": {
+        "villageId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["villageId", "userId", "text", "timestamp"]
+    },
+    "wellnessLog": {
+      "title": "Wellness Log",
+      "description": "A record of the mother's mood, hydration, or sleep.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["mood", "hydration", "sleep", "recovery"] },
+        "value": { "type": "number" },
+        "notes": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "timestamp"]
     }
   },
   "firestore": {
@@ -183,6 +235,10 @@
       "schema": "log",
       "description": "Activity logs for a specific baby."
     },
+    "/babies/{babyId}/nutritionLog/{taskId}": {
+      "schema": "nutritionTask",
+      "description": "Food introduction tracking."
+    },
     "/chatSessions/{sessionId}": {
       "schema": "chatSession",
       "description": "A conversation between a user and the AI."
@@ -190,6 +246,18 @@
     "/chatSessions/{sessionId}/messages/{messageId}": {
       "schema": "message",
       "description": "Messages within a chat session."
+    },
+    "/villages/{villageId}": {
+      "schema": "village",
+      "description": "Community groups."
+    },
+    "/villages/{villageId}/messages/{messageId}": {
+      "schema": "villageMessage",
+      "description": "Messages in community villages."
+    },
+    "/wellnessLogs/{logId}": {
+      "schema": "wellnessLog",
+      "description": "Maternal wellness tracking."
     }
   }
 }

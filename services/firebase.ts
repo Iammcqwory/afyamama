@@ -1,10 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Using initializeFirestore with aggressive settings to bypass iframe/proxy issues
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: false, // Force it on
+}, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth();
 
 enum OperationType {
@@ -54,17 +58,5 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test connection quietly
-if (typeof window !== 'undefined') {
-  const testConnection = async () => {
-    try {
-      await getDocFromServer(doc(db, 'test', 'connection'));
-    } catch (error) {
-      // Ignore initial connection test errors to prevent "Script error" noise
-      // but log for debugging if needed
-    }
-  };
-  testConnection();
-}
-
+// OperationType enum
 export { OperationType };

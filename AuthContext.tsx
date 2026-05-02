@@ -17,31 +17,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        // Sync user profile to Firestore
-        const userRef = doc(db, 'users', currentUser.uid);
-        try {
-          const userDoc = await getDoc(userRef);
-          if (!userDoc.exists()) {
-            await setDoc(userRef, {
-              email: currentUser.email,
-              displayName: currentUser.displayName,
-              photoURL: currentUser.photoURL,
-              onboardingCompleted: false,
-              createdAt: new Date().toISOString()
-            });
-          }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
-        }
-      }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      const syncUserProfile = async () => {
+        const userRef = doc(db, 'users', user.uid);
+        try {
+          const userDoc = await getDoc(userRef);
+          if (!userDoc.exists()) {
+            await setDoc(userRef, {
+              email: user.email,
+              displayName: user.displayName,
+              photoURL: user.photoURL,
+              onboardingCompleted: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        } catch (error: any) {
+          // Log but don't break the app if Firestore is offline
+          if (error.code === 'unavailable' || error.message?.includes('offline')) {
+            console.warn("Firestore appears to be offline. Profile sync will retry later.");
+          } else {
+            console.error("Profile sync error:", error);
+          }
+        }
+      };
+      syncUserProfile();
+    }
+  }, [user]);
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 

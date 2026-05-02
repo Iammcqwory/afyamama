@@ -11,28 +11,76 @@ import { MotherHub } from './components/MotherHub';
 import { BabyHub } from './components/BabyHub';
 import { ToolsHub } from './components/ToolsHub';
 import { ShopPage } from './components/ShopPage';
+import { CommunityVillages } from './components/CommunityVillages';
 import { useAuth } from './AuthContext';
-import { createChatSession, saveMessage, subscribeToMessages } from './services/firebaseService';
+import { createChatSession, getBabyProfiles, saveMessage, subscribeToMessages } from './services/firebaseService';
 
-export type AppTab = 'home' | 'chat' | 'podcast' | 'shop' | 'pregnancy' | 'maternal-health' | 'expert-advice' | 'baby-tracker' | 'development' | 'feeding-sleep' | 'baby-names' | 'safety' | 'nutrition' | 'white-noise';
+export type AppTab = 'home' | 'chat' | 'podcast' | 'shop' | 'community' | 'pregnancy' | 'maternal-health' | 'expert-advice' | 'baby-tracker' | 'development' | 'feeding-sleep' | 'baby-names' | 'safety' | 'nutrition' | 'white-noise';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('home');
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('theme');
+      return saved === 'dark';
+    }
+    return false;
+  });
   const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [babyProfiles, setBabyProfiles] = useState<any[]>([]);
   const chatSession = useRef<Chat | null>(null);
   const { user } = useAuth();
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
+  const getPersonalizedContext = (profiles: any[]) => {
+    if (profiles.length === 0) return undefined;
+    
+    const contextLines = profiles.map(p => {
+      const birthDate = p.birthDate ? new Date(p.birthDate) : null;
+      let ageStr = "";
+      if (birthDate) {
+        const diff = Date.now() - birthDate.getTime();
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const months = Math.floor(days / 30);
+        ageStr = months > 0 ? `${months} months old` : `${days} days old`;
+      }
+      return `- Baby Name: ${p.name}, Age: ${ageStr}, Sex: ${p.sex}`;
+    });
+    
+    return `The user has the following baby profiles:\n${contextLines.join('\n')}`;
+  };
+
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      if (user) {
+        const profiles = await getBabyProfiles(user.uid);
+        setBabyProfiles(profiles || []);
+      }
+    };
+    fetchProfiles();
+  }, [user]);
+
   useEffect(() => {
     if (activeTab === 'chat' && !chatSession.current) {
-      chatSession.current = startChat();
+      const context = getPersonalizedContext(babyProfiles);
+      chatSession.current = startChat(context);
       if (!user) {
         handleSend('', undefined, true); 
       }
     }
-  }, [activeTab, user]);
+  }, [activeTab, user, babyProfiles]);
 
   useEffect(() => {
     if (user && activeTab === 'chat' && !sessionId) {
@@ -64,7 +112,8 @@ const App: React.FC = () => {
       const id = await createChatSession(user.uid, "New Conversation");
       if (id) {
         setSessionId(id);
-        chatSession.current = startChat();
+        const context = getPersonalizedContext(babyProfiles);
+        chatSession.current = startChat(context);
         handleSend('', undefined, true, id);
       }
     } else {
@@ -203,14 +252,21 @@ const App: React.FC = () => {
         return <ToolsHub activeSubTab={activeTab} />;
       case 'shop':
         return <ShopPage />;
+      case 'community':
+        return <CommunityVillages />;
       default:
         return <HomeDashboard onStart={() => setActiveTab('chat')} onNavigate={setActiveTab} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white selection:bg-red-500">
-      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+    <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-50 selection:bg-red-500 bg-grid">
+      <Navigation 
+        activeTab={activeTab} 
+        onTabChange={setActiveTab} 
+        isDarkMode={isDarkMode}
+        toggleTheme={() => setIsDarkMode(!isDarkMode)}
+      />
       <main className="pt-20 pb-10">
         <div className="max-w-7xl mx-auto px-4 animate-fade-in">
           {renderContent()}

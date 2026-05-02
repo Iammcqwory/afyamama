@@ -9,11 +9,15 @@ if (!API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-export function startChat(): Chat {
+export function startChat(personalizedContext?: string): Chat {
+  const instruction = personalizedContext 
+    ? `${SYSTEM_INSTRUCTION}\n\nUSER CONTEXT:\n${personalizedContext}`
+    : SYSTEM_INSTRUCTION;
+
   const chat = ai.chats.create({
     model: 'gemini-3-flash-preview',
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: instruction,
       temperature: 0.5,
     },
   });

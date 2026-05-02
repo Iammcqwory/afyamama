@@ -52,6 +52,21 @@ export const getChatSessions = async (userId: string) => {
   }
 };
 
+export const getBabyProfiles = async (userId: string) => {
+  const path = 'babies';
+  try {
+    const q = query(
+      collection(db, path),
+      where('ownerId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+};
+
 export const subscribeToMessages = (sessionId: string, callback: (messages: Message[]) => void) => {
   const path = `chatSessions/${sessionId}/messages`;
   const q = query(collection(db, path), orderBy('timestamp', 'asc'));
